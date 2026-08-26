@@ -1,0 +1,6 @@
+# pyproject.toml  -> [project] dependencies
+dependencies = [
+    # ...existing entries unchanged...
+    "fastapi>=0.110",
+    "httpx>=0.27",   # required by fastapi.testclient (offline tests)
+]
