@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    image: finance-controller
+    ports:
+      - "8000:8000"
+    volumes:
+      - runs_data:/app/data/runs
+    environment:
+      # Supplied from host environment when present; deterministic
+      # execution works without any of these.
+      FINANCE_LLM_API_KEY: ${FINANCE_LLM_API_KEY:-}
+      FINANCE_LLM_MODEL: ${FINANCE_LLM_MODEL:-}
+      FINANCE_LLM_BASE_URL: ${FINANCE_LLM_BASE_URL:-}
+
+volumes:
+  runs_data:

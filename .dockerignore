@@ -1,0 +1,44 @@
+# version control
+.git
+.github
+
+# caches
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov/
+
+# virtual environments
+.venv
+venv
+env/
+
+# build artifacts
+build/
+dist/
+*.egg-info/
+
+# data output (application-controlled runtime dir)
+data/
+data/runs/
+
+# secrets
+.env
+.env.*
+*.key
+*secret*
+
+# tests & scripts not needed in image
+tests/
+scripts/
+docs/
+
+# docker artifacts themselves
+Dockerfile
+.dockerignore
+docker-compose.yml

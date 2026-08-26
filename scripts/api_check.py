@@ -59,3 +59,22 @@ assert r.status_code == 422
 print("path-traversal defense  : OK")
 
 print("\nALL API CHECKS PASSED (no network used)")
+
+# direct-input mode (offline)
+ds_txns = generate_dataset(seed=3)
+txns = ds_txns.transactions[:15]
+exts, _ = generate_external_dataset(ds_txns, seed=4)
+payload_tx = [{"transaction_id": t.transaction_id,
+               "internal_amount": str(t.internal_amount),
+               "date": t.date.isoformat()} for t in txns]
+payload_ex = [{"external_id": e.external_id,
+               "external_amount": str(e.external_amount),
+               "date": e.date.isoformat(),
+               "counterparty": getattr(e, "counterparty", "")}
+              for e in exts][:15]
+r = client.post("/pipeline/run", json={"transactions": payload_tx,
+                                       "external_records": payload_ex})
+assert r.status_code == 200
+r2 = client.post("/pipeline/run", json={"transactions": payload_tx})
+assert r2.status_code == 422
+print("direct-input /pipeline/run : OK (+only-one rejected)")

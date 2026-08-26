@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from .generator import generate_dataset, generate_external_dataset
 from .pipeline import PipelineResult, run_pipeline
 from .storage import RUNS_DIR_DEFAULT, load_pipeline_result, save_pipeline_result
+from .models import Transaction, ExternalRecord
 
 RUNS_DIR = RUNS_DIR_DEFAULT          # application-controlled output dir
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -185,3 +186,60 @@ def create_app(llm_client: Any = None,
 
 
 app = create_app()
+
+# --- extended PipelineRequest (defaults unchanged; behavior identical
+#     when neither field is supplied) ---
+class PipelineRequest(BaseModel):
+    seed: int = Field(default=42)
+    external_seed: int = Field(default=99)
+    run_llm: bool = False
+    run_evaluation: bool = False
+    enable_date_fallback: bool = False
+    # Optional direct input. When BOTH are provided they are parsed with
+    # the EXISTING domain dataclasses (no duplicate financial schema) and
+    # passed straight to run_pipeline(). Seeds are ignored in that case.
+    transactions: Optional[List[Dict[str, Any]]] = None
+    external_records: Optional[List[Dict[str, Any]]] = None
+
+
+class _InputError(Exception):
+    """Invalid user-supplied records -> mapped to HTTP 422."""
+
+
+def _parse_transactions(raw: List[dict]) -> List[Transaction]:
+    try:
+        return [Transaction(**item) for item in raw]
+    except Exception as e:
+        raise _InputError(f"invalid transaction record: {e}") from None
+
+
+def _parse_external(raw: List[dict]) -> List[ExternalRecord]:
+    try:
+        return [ExternalRecord(**item) for item in raw]
+    except Exception as e:
+        raise _InputError(f"invalid external_record: {e}") from None
+
+
+def _resolve_inputs(req: PipelineRequest):
+    """Returns (transactions, externals). Generated when neither field
+    is supplied; otherwise both must be supplied and valid."""
+    if req.transactions is None and req.external_records is None:
+        ds = generate_dataset(seed=req.seed)
+        exts, _ = generate_external_dataset(ds, seed=req.external_seed)
+        return list(ds.transactions), exts
+    if (req.transactions is None) != (req.external_records is None):
+        raise HTTPException(status_code=422, detail=error_response(
+            "incomplete_input",
+            "provide BOTH 'transactions' and 'external_records' "
+            "(or neither; generated dataset will be used)"))
+    if not isinstance(req.transactions, list) or \
+       not isinstance(req.external_records, list):
+        raise HTTPException(status_code=422, detail=error_response(
+            "invalid_input", "transactions/external_records must be arrays"))
+    try:
+        txns = _parse_transactions(req.transactions)
+        exts = _parse_external(req.external_records)
+    except _InputError as e:
+        raise HTTPException(status_code=422, detail=error_response(
+            "invalid_record", str(e)))
+    return txns, exts
