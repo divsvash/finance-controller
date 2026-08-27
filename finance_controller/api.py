@@ -374,3 +374,33 @@ def _dec(value: Any, name: str) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, TypeError):
         raise ValueError(f"{name}: not a Decimal-compatible value")
+
+# --- PipelineRequest gains ONE optional field ---
+class PipelineRequest(BaseModel):
+    # ...existing fields unchanged...
+    cash_position: Optional[Dict[str, Any]] = None
+    expected_flows: Optional[List[Dict[str, Any]]] = None
+    treasury_policy: Optional[Dict[str, Any]] = None
+    proposed_amount: Optional[Any] = None          # NEW; strict-parsed below
+
+
+# --- new strict parser (transport boundary only; no decision logic) ---
+def _parse_proposed_amount(raw) -> Optional[Decimal]:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        raise _TreasuryInputError(
+            "proposed_amount: boolean is not a monetary value")
+    if isinstance(raw, float):
+        raise _TreasuryInputError(
+            "proposed_amount: float values are not accepted for monetary "
+            "fields; use a string or integer")
+    try:
+        d = Decimal(str(raw))
+    except (InvalidOperation, TypeError):
+        raise _TreasuryInputError("proposed_amount: not a Decimal-compatible value")
+    if not d.is_finite():
+        raise _TreasuryInputError("proposed_amount: must be finite")
+    if d < 0:
+        raise _TreasuryInputError("proposed_amount: must not be negative")
+    return d
