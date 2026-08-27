@@ -17,6 +17,12 @@ Environment variables (LLM mode only):
 No flags = deterministic-only; no API key needed, no LLM client is ever
 constructed. --llm never falls back to FakeLLMClient.
 """
+import json
+from datetime import date
+from decimal import Decimal, InvalidOperation
+from .treasury import (
+    CashPosition, Certainty, ControllerPolicy, ExpectedFlow,
+    FlowCategory, FlowDirection)
 from __future__ import annotations
 
 import argparse
@@ -171,3 +177,113 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+TREASURY_KEYS = ("cash_position", "expected_flows", "treasury_policy")
+
+# ---- treasury input loading (parsing only — NO calculation logic here;
+#      all arithmetic stays in treasury.py) ----
+
+def _cli_error(msg: str) -> "NoReturn":
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def _t_dec(value, name):
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError(f"{name}: monetary values must be strings or "
+                         f"integers, never floats/booleans")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValueError(f"{name}: not a Decimal-compatible value")
+
+
+def _t_date(value, name):
+    if not isinstance(value, str):
+        raise ValueError(f"{name}: must be an ISO YYYY-MM-DD string")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name}: invalid ISO date {value!r}")
+
+
+def _t_enum(enum_cls, value, name):
+    try:
+        return enum_cls(value)
+    except ValueError:
+        raise ValueError(f"{name}: invalid {enum_cls.__name__} {value!r}")
+
+
+def _load_treasury_inputs(path_str):
+    """Returns (cash_position, expected_flows, policy) or (None,)*3.
+    All three keys required together; no defaults invented."""
+    path = pathlib.Path(path_str)
+    if not path.is_file():
+        _cli_error(f"treasury input file not found: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        _cli_error(f"treasury input file is not valid JSON: {e}")
+    if not isinstance(data, dict):
+        _cli_error("treasury input must be a JSON object")
+    present = [k for k in TREASURY_KEYS if k in data]
+    missing = [k for k in TREASURY_KEYS if k not in data]
+    if present and missing:
+        _cli_error(f"partial treasury input: missing {missing} "
+                   f"(all of {list(TREASURY_KEYS)} are required together)")
+    if not present:
+        return None, None, None          # treasury disabled
+    try:
+        cp = data["cash_position"]
+        pos = CashPosition(
+            as_of=_t_date(cp["as_of"], "cash_position.as_of"),
+            opening_balance=_t_dec(cp["opening_balance"],
+                                   "cash_position.opening_balance"),
+            cleared_inflows=_t_dec(cp["cleared_inflows"],
+                                   "cash_position.cleared_inflows"),
+            cleared_outflows=_t_dec(cp["cleared_outflows"],
+                                    "cash_position.cleared_outflows"))
+        flows = []
+        for i, f in enumerate(data["expected_flows"]):
+            flows.append(ExpectedFlow(
+                flow_id=str(f["flow_id"]),
+                direction=_t_enum(FlowDirection, f["direction"],
+                                  f"flow[{i}].direction"),
+                amount=_t_dec(f["amount"], f"flow[{i}].amount"),
+                expected_date=_t_date(f["expected_date"],
+                                      f"flow[{i}].expected_date"),
+                category=_t_enum(FlowCategory, f.get("category", "OTHER"),
+                                 f"flow[{i}].category"),
+                certainty=_t_enum(Certainty, f["certainty"],
+                                  f"flow[{i}].certainty"),
+                linked_transaction_id=f.get("linked_transaction_id")))
+        pol_raw = data["treasury_policy"]
+        if not isinstance(pol_raw.get("include_forecast_flows"), bool):
+            raise ValueError(
+                "treasury_policy.include_forecast_flows must be a boolean")
+        pol = ControllerPolicy(
+            minimum_cash_reserve=_t_dec(pol_raw["minimum_cash_reserve"],
+                                        "policy.minimum_cash_reserve"),
+            reserve_buffer_pct=_t_dec(pol_raw["reserve_buffer_pct"],
+                                      "policy.reserve_buffer_pct"),
+            max_single_movement_pct=_t_dec(pol_raw["max_single_movement_pct"],
+                                           "policy.max_single_movement_pct"),
+            include_forecast_flows=pol_raw["include_forecast_flows"])
+    except KeyError as e:
+        _cli_error(f"missing required treasury field: {e}")
+    except ValueError as e:              # includes domain __post_init__ rules
+        _cli_error(f"invalid treasury input: {e}")
+    return pos, flows, pol
+
+
+def _print_treasury_summary(s):
+    # Plain labeled lines, consistent with existing CLI output style.
+    # str(Decimal) preserves exact precision — never float().
+    print("== treasury ==")
+    print(f"current_cash: {s.current_cash}")
+    print(f"expected_net: {s.expected_net}")
+    print(f"projected_cash: {s.projected_cash}")
+    print(f"reserve_requirement: {s.reserve_requirement}")
+    print(f"safe_movable_capital: {s.safe_movable_capital}")
+    print(f"obligation_breaches_reserve: {s.obligation_breaches_reserve}")
+    print(f"insufficiency: {s.insufficiency}")
