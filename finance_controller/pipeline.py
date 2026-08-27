@@ -154,3 +154,26 @@ def run_pipeline(
         # to reconciliation results in this task).
         treasury_summary = compute_treasury_summary(
             cash_position, expected_flows, treasury_policy)
+
+# --- additive import ---
+from .controller import ControllerDecision, evaluate_treasury_decision
+
+# --- PipelineResult gains ONE trailing optional field ---
+    treasury_summary: Optional[TreasurySummary] = None
+    controller_decision: Optional[ControllerDecision] = None   # NEW
+
+# --- run_pipeline() gains ONE optional kwarg ---
+def run_pipeline(
+    transactions,
+    external_records,
+    *,
+    run_llm: bool = False,
+    run_evaluation: bool = False,
+    enable_date_fallback: bool = False,
+    llm_client=None,
+    cash_position=None,
+    expected_flows=None,
+    treasury_policy=None,
+    # --- NEW ---
+    proposed_amount: Optional[Decimal] = None,
+):
