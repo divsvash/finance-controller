@@ -243,3 +243,134 @@ def _resolve_inputs(req: PipelineRequest):
         raise HTTPException(status_code=422, detail=error_response(
             "invalid_record", str(e)))
     return txns, exts
+
+    # --- additive imports ---
+import datetime as _dt
+from decimal import Decimal, InvalidOperation
+from .treasury import (
+    CashPosition, Certainty, ControllerPolicy, ExpectedFlow,
+    FlowCategory, FlowDirection, TreasurySummary)
+
+# --- extended PipelineRequest (additive; defaults preserve behavior) ---
+class PipelineRequest(BaseModel):
+    # ...all existing fields unchanged...
+    cash_position: Optional[Dict[str, Any]] = None
+    expected_flows: Optional[List[Dict[str, Any]]] = None
+    treasury_policy: Optional[Dict[str, Any]] = None
+
+
+def _dec(value: Any, name: str) -> Decimal:
+    """Money arrives as JSON strings/integers — never floats."""
+    if isinstance(value, bool):                       # bool is an int subclass
+        raise ValueError(f"{name}: boolean is not a monetary value")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValueError(f"{name}: not a Decimal-compatible value")
+
+
+def _iso_date(value: Any, name: str) -> _dt.date:
+    if not isinstance(value, str):
+        raise ValueError(f"{name}: date must be an ISO YYYY-MM-DD string")
+    try:
+        return _dt.date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name}: invalid ISO date {value!r}")
+
+
+def _enum(enum_cls, value: Any, name: str):
+    try:
+        return enum_cls(value)
+    except ValueError:
+        raise ValueError(
+            f"{name}: invalid {enum_cls.__name__} value {value!r}")
+
+
+class _TreasuryInputError(Exception):
+    pass
+
+
+def _parse_cash_position(raw: Dict[str, Any]) -> CashPosition:
+    try:
+        return CashPosition(
+            as_of=_iso_date(raw.get("as_of"), "cash_position.as_of"),
+            opening_balance=_dec(raw.get("opening_balance"),
+                                 "cash_position.opening_balance"),
+            cleared_inflows=_dec(raw.get("cleared_inflows"),
+                                 "cash_position.cleared_inflows"),
+            cleared_outflows=_dec(raw.get("cleared_outflows"),
+                                  "cash_position.cleared_outflows"))
+    except ValueError as e:
+        raise _TreasuryInputError(str(e))
+
+
+def _parse_expected_flow(raw: Dict[str, Any]) -> ExpectedFlow:
+    try:
+        return ExpectedFlow(
+            flow_id=str(raw["flow_id"]),
+            direction=_enum(FlowDirection, raw.get("direction"),
+                            f"flow[{raw.get('flow_id')}].direction"),
+            amount=_dec(raw.get("amount"), f"flow[{raw.get('flow_id')}].amount"),
+            expected_date=_iso_date(raw.get("expected_date"), "expected_date"),
+            category=_enum(FlowCategory, raw.get("category", "OTHER"),
+                           "category"),
+            certainty=_enum(Certainty, raw.get("certainty"),
+                            f"flow[{raw.get('flow_id')}].certainty"),
+            linked_transaction_id=raw.get("linked_transaction_id"))
+    except KeyError as e:
+        raise _TreasuryInputError(f"expected flow missing field {e}")
+    except ValueError as e:
+        raise _TreasuryInputError(str(e))
+
+
+def _parse_policy(raw: Dict[str, Any]) -> ControllerPolicy:
+    include_forecast = raw.get("include_forecast_flows")
+    if not isinstance(include_forecast, bool):
+        raise _TreasuryInputError(
+            "treasury_policy.include_forecast_flows must be a boolean")
+    try:
+        return ControllerPolicy(
+            minimum_cash_reserve=_dec(raw.get("minimum_cash_reserve"),
+                                      "policy.minimum_cash_reserve"),
+            reserve_buffer_pct=_dec(raw.get("reserve_buffer_pct"),
+                                    "policy.reserve_buffer_pct"),
+            max_single_movement_pct=_dec(raw.get("max_single_movement_pct"),
+                                         "policy.max_single_movement_pct"),
+            include_forecast_flows=include_forecast)
+    except ValueError as e:   # domain validation (negatives, pct > 1)
+        raise _TreasuryInputError(str(e))
+
+
+def _resolve_treasury_inputs(req: PipelineRequest):
+    """All-or-none rule, mirroring run_pipeline()'s validation."""
+    supplied = [req.cash_position is not None,
+                req.expected_flows is not None,
+                req.treasury_policy is not None]
+    if any(supplied) and not all(supplied):
+        raise HTTPException(status_code=422, detail=error_response(
+            "incomplete_treasury_input",
+            "supply ALL of cash_position, expected_flows, treasury_policy "
+            "— or none (treasury disabled)"))
+    if not all(supplied):
+        return None, None, None
+    try:
+        pos = _parse_cash_position(req.cash_position)
+        flows = [_parse_expected_flow(f) for f in req.expected_flows]
+        pol = _parse_policy(req.treasury_policy)
+    except _TreasuryInputError as e:
+        raise HTTPException(status_code=422, detail=error_response(
+            "invalid_treasury_input", str(e)))
+    return pos, flows, pol
+
+def _dec(value: Any, name: str) -> Decimal:
+    """Money arrives as strings/integers — never floats."""
+    if isinstance(value, bool):                       # bool is an int subclass
+        raise ValueError(f"{name}: boolean is not a monetary value")
+    if isinstance(value, float):
+        raise ValueError(
+            f"{name}: float values are not accepted for monetary fields; "
+            "use a string or integer")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValueError(f"{name}: not a Decimal-compatible value")

@@ -10,7 +10,7 @@ from finance_controller.storage import save_pipeline_result, \
 from finance_controller.treasury import (
     CashPosition, Certainty, ControllerPolicy, ExpectedFlow,
     FlowDirection, compute_treasury_summary)
-
+from finance_controller.treasury import TreasurySummary
 
 def _inputs():
     ds = generate_dataset(seed=42)
