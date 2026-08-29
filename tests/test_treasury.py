@@ -33,7 +33,7 @@ def flow(fid, direction, amount, category=FlowCategory.OTHER,
 
 # 1 healthy — matches the hand-calculation above exactly
 def test_healthy_position():
- s = compute_treasury_summary(pos(), [
+    s = compute_treasury_summary(pos(), [
         flow("f1", FlowDirection.INFLOW, "15000", FlowCategory.RECEIVABLE),
         flow("f2", FlowDirection.OUTFLOW, "8000", FlowCategory.PAYROLL,
              Certainty.SCHEDULED)], pol())

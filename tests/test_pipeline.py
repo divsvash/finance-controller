@@ -26,23 +26,6 @@ def test_deterministic_only(monkeypatch):
     assert r.llm_assessments is None and r.evaluation_summary is None
     assert len(r.deterministic_assessments) == len(r.investigation_cases)
 
-    # ---- treasury (additive; all-or-none validation rule) ----
-    supplied = [cash_position is not None,
-                expected_flows is not None,
-                treasury_policy is not None]
-    if any(supplied) and not all(supplied):
-        raise ValueError(
-            "partial treasury inputs are not allowed: supply ALL of "
-            "cash_position, expected_flows, treasury_policy — or none")
-    treasury_summary = None
-    if all(supplied):
-        # Pure deterministic computation over DECLARED inputs only.
-        # No inference from transactions/external_records.
-        # linked_transaction_id remains inert metadata (not connected
-        # to reconciliation results in this task).
-        treasury_summary = compute_treasury_summary(
-            cash_position, expected_flows, treasury_policy)
-
 
 # 3/4 generated full dataset, 122 cases, one assessment each
 def test_full_122_case_pipeline():

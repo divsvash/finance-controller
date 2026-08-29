@@ -53,15 +53,15 @@ def generate_dataset(
 
     def add(day, amount, direction, category, source,
         status=TxnStatus.COMPLETED):
-    ts = datetime(day.year, day.month, day.day,
-                  rng.randint(8, 22), rng.randint(0, 59))
-    txns.append(Transaction(
-        id=f"txn_{seed}_{len(txns):06d}", timestamp=ts,
-        amount=money(str(round(amount, 2))),
-        direction=direction, category=category, status=status,
-        source=source,
-        payment_ref=f"pay_{t}{len(txns):06d}",   # unique, deterministic
-    ))
+        ts = datetime(day.year, day.month, day.day,
+                      rng.randint(8, 22), rng.randint(0, 59))
+        txns.append(Transaction(
+            id=f"txn_{seed}_{len(txns):06d}", timestamp=ts,
+            amount=money(str(round(amount, 2))),
+            direction=direction, category=category, status=status,
+            source=source,
+            payment_ref=f"pay_{seed}{len(txns):06d}",   # unique, deterministic
+        ))
 
 
     end_date = start_date + timedelta(days=30 * months)
@@ -99,6 +99,24 @@ def generate_dataset(
                 "unexpected_expense", "bank_debit")
         day += timedelta(days=1)
 
+    # Reconcile to exactly target_txn_count - 8 before the 8 fixed
+    # anomalies below, so the final count is EXACT (per docstring).
+    # The day-loop's own exit check only fires once per day but can add
+    # a variable-sized batch within that day, so it can overshoot OR
+    # (e.g. when the fixed day-window empties first) undershoot this
+    # boundary. Uses the same "recycle an existing day" approach as the
+    # anomaly block immediately below, rather than extending the day
+    # window (which finance_controller.generator.generate_external_dataset
+    # relies on being exactly 120 days) or inventing new generation rates.
+    target_before_anomalies = target_txn_count - 8
+    if len(txns) > target_before_anomalies:
+        del txns[target_before_anomalies:]
+    else:
+        while len(txns) < target_before_anomalies:
+            t = rng.choice(txns)
+            add(t.timestamp.date(), rng.uniform(800, 6000),
+                Direction.INFLOW, "sales", "razorpay_payment")
+
     # Exactly 8 anomalous records, counted inside target_txn_count.
     for _ in range(5):
         t = rng.choice(txns)
@@ -132,7 +150,7 @@ def _generate_obligations(rng: random.Random, after: date) -> list[Obligation]:
     ]
     for i, (name, fixed, offset_days) in enumerate(specs):
         amt = Decimal(fixed) if fixed else \
-            money(str(round(rng.uniform(*lo_hi(name)), 2)))
+            money(str(round(rng.uniform(*_lo_hi(name)), 2)))
         obs.append(Obligation(
             id=f"obligation_{i:03d}",
             due_date=after + timedelta(days=offset_days),

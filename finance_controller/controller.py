@@ -14,9 +14,9 @@ Policy semantics:
 """
 from __future__ import annotations
 
-import dataclasses
-import decimal
 import enum
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Optional
 
 from .treasury import (
@@ -35,6 +35,22 @@ class ControllerDecision:
     movable_capital_basis: Decimal
     cap_amount: Decimal
     reasons: tuple[str, ...]
+
+
+def _deny(
+    reason: str,
+    proposed_amount: Decimal,
+    movable_capital_basis: Decimal,
+    cap_amount: Decimal,
+) -> ControllerDecision:
+    """Build a DENY decision. Mirrors the field population of the ALLOW
+    branch in evaluate_treasury_decision; carries no rule logic itself."""
+    return ControllerDecision(
+        decision_type=DecisionType.DENY,
+        proposed_amount=proposed_amount,
+        movable_capital_basis=movable_capital_basis,
+        cap_amount=cap_amount,
+        reasons=(reason,))
 
 
 def evaluate_treasury_decision(
@@ -62,23 +78,28 @@ def evaluate_treasury_decision(
         return _deny(
             "projected cash is insufficient: current_cash="
             f"{summary.current_cash}, projected_cash={summary.projected_cash}",
-            ...)
+            proposed_amount, summary.safe_movable_capital, gov.cap_amount)
     # rule 3 -- reserve breach
     if summary.obligation_breaches_reserve:
         return _deny(
             f"expected obligations breach required reserve "
             f"{summary.reserve_requirement}: projected_cash="
-            f"{summary.projected_cash}", ...)
+            f"{summary.projected_cash}",
+            proposed_amount, summary.safe_movable_capital, gov.cap_amount)
 
     # rule 4 -- hard reserve-protection ceiling
     if proposed_amount > summary.safe_movable_capital:
         return _deny(f"proposed amount {proposed_amount} exceeds "
-                     f"safe movable capital {summary.safe_movable_capital}", ...)
+                     f"safe movable capital {summary.safe_movable_capital}",
+                     proposed_amount, summary.safe_movable_capital,
+                     gov.cap_amount)
 
     # rule 5 -- single-movement governance cap
     if not gov.allowed:
         return _deny(f"proposed amount {proposed_amount} exceeds "
-                     f"single-movement governance cap {gov.cap_amount}", ...)
+                     f"single-movement governance cap {gov.cap_amount}",
+                     proposed_amount, summary.safe_movable_capital,
+                     gov.cap_amount)
 
     # rule 6 -- allow
     return ControllerDecision(

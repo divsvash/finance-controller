@@ -19,8 +19,10 @@ caller must inject any object implementing generate(prompt)->str.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Optional, Sequence
 
+from .controller import ControllerDecision, evaluate_treasury_decision
 from .exceptions import InvestigationCase, build_investigation_cases
 from .evaluation import EvaluationResult, EvaluationSummary, evaluate_batch
 from .investigator import (
@@ -28,6 +30,9 @@ from .investigator import (
 from .llm_investigator import LLMClient, llm_investigate_cases
 from .models import ExternalRecord, Transaction
 from .reconciliation import reconcile
+from .treasury import (
+    CashPosition, ControllerPolicy, ExpectedFlow,
+    TreasurySummary, compute_treasury_summary)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class PipelineResult:
     llm_assessments: Optional[tuple[InvestigationAssessment, ...]] = None
     evaluation_results: Optional[tuple[EvaluationResult, ...]] = None
     evaluation_summary: Optional[EvaluationSummary] = None
+    treasury_summary: Optional[TreasurySummary] = None
+    controller_decision: Optional[ControllerDecision] = None
 
     @property
     def case_count(self) -> int:
@@ -48,10 +55,15 @@ class PipelineResult:
 def run_pipeline(
     transactions: Sequence[Transaction],
     external_records: Sequence[ExternalRecord],
+    *,
     llm_client: LLMClient | None = None,
     run_llm: bool = False,
     run_evaluation: bool = False,
     enable_date_fallback: bool = False,
+    cash_position: Optional[CashPosition] = None,
+    expected_flows: Optional[list[ExpectedFlow]] = None,
+    treasury_policy: Optional[ControllerPolicy] = None,
+    proposed_amount: Optional[Decimal] = None,
 ) -> PipelineResult:
     """Run the full orchestration deterministically.
 
@@ -65,10 +77,21 @@ def run_pipeline(
         run_evaluation: enable the evaluation harness. Requires LLM mode;
             raises ValueError otherwise.
         enable_date_fallback: passed through to reconcile().
+        cash_position, expected_flows, treasury_policy: optional treasury
+            inputs. All-or-none: supplying any one requires all three.
+            When all three are supplied, a TreasurySummary is computed
+            purely from these DECLARED inputs -- never inferred from
+            transactions/external_records.
+        proposed_amount: optional proposed movement amount. A
+            ControllerDecision is computed only when the treasury inputs
+            are complete AND proposed_amount is supplied; otherwise the
+            controller stage is skipped entirely.
 
     Raises:
-        ValueError: run_evaluation without run_llm, or run_llm without a
-            client. All lower-layer exceptions propagate untouched.
+        ValueError: run_evaluation without run_llm, run_llm without a
+            client, partial treasury inputs, or an invalid
+            proposed_amount (surfaced from evaluate_treasury_decision).
+            All lower-layer exceptions propagate untouched.
     """
     if run_evaluation and not run_llm:
         raise ValueError(
@@ -79,6 +102,28 @@ def run_pipeline(
             "run_llm=True requires an injected llm_client implementing "
             "LLMClient.generate(prompt). The pipeline does not create "
             "clients itself.")
+
+    # ---- treasury (additive; all-or-none validation rule) ----
+    supplied = [cash_position is not None,
+                expected_flows is not None,
+                treasury_policy is not None]
+    if any(supplied) and not all(supplied):
+        raise ValueError(
+            "partial treasury inputs are not allowed: supply ALL of "
+            "cash_position, expected_flows, treasury_policy — or none")
+    treasury_summary: Optional[TreasurySummary] = None
+    if all(supplied):
+        # Pure deterministic computation over DECLARED inputs only.
+        # No inference from transactions/external_records.
+        # linked_transaction_id remains inert metadata (not connected
+        # to reconciliation results in this task).
+        treasury_summary = compute_treasury_summary(
+            cash_position, expected_flows, treasury_policy)
+
+    controller_decision: Optional[ControllerDecision] = None
+    if treasury_summary is not None and proposed_amount is not None:
+        controller_decision = evaluate_treasury_decision(
+            treasury_summary, treasury_policy, proposed_amount)
 
     txns = list(transactions)
     exts = list(external_records)
@@ -108,72 +153,6 @@ def run_pipeline(
         deterministic_assessments=tuple(det_assessments),
         llm_assessments=llm_assessments,
         evaluation_results=eval_results,
-        evaluation_summary=eval_summary)
-
-# --- additive imports ---
-from .treasury import (
-    CashPosition, ControllerPolicy, ExpectedFlow,
-    TreasurySummary, compute_treasury_summary)
-
-# --- PipelineResult gains ONE trailing optional field ---
-@dataclass(frozen=True)
-class PipelineResult:
-    # ...all existing fields unchanged...
-    llm_assessments: Optional[...] = None
-    evaluation_results: ... = None
-    evaluation_summary: ... = None
-    treasury_summary: Optional[TreasurySummary] = None   # NEW, default None
-
-def run_pipeline(
-    transactions,
-    external_records,
-    *,
-    run_llm: bool = False,
-    run_evaluation: bool = False,
-    enable_date_fallback: bool = False,
-    llm_client=None,
-    # --- NEW optional treasury inputs (all-or-none, see below) ---
-    cash_position: Optional[CashPosition] = None,
-    expected_flows: Optional[list[ExpectedFlow]] = None,
-    treasury_policy: Optional[ControllerPolicy] = None,
-):
-
-    # ---- treasury (additive; all-or-none validation rule) ----
-    supplied = [cash_position is not None,
-                expected_flows is not None,
-                treasury_policy is not None]
-    if any(supplied) and not all(supplied):
-        raise ValueError(
-            "partial treasury inputs are not allowed: supply ALL of "
-            "cash_position, expected_flows, treasury_policy — or none")
-    treasury_summary = None
-    if all(supplied):
-        # Pure deterministic computation over DECLARED inputs only.
-        # No inference from transactions/external_records.
-        # linked_transaction_id remains inert metadata (not connected
-        # to reconciliation results in this task).
-        treasury_summary = compute_treasury_summary(
-            cash_position, expected_flows, treasury_policy)
-
-# --- additive import ---
-from .controller import ControllerDecision, evaluate_treasury_decision
-
-# --- PipelineResult gains ONE trailing optional field ---
-    treasury_summary: Optional[TreasurySummary] = None
-    controller_decision: Optional[ControllerDecision] = None   # NEW
-
-# --- run_pipeline() gains ONE optional kwarg ---
-def run_pipeline(
-    transactions,
-    external_records,
-    *,
-    run_llm: bool = False,
-    run_evaluation: bool = False,
-    enable_date_fallback: bool = False,
-    llm_client=None,
-    cash_position=None,
-    expected_flows=None,
-    treasury_policy=None,
-    # --- NEW ---
-    proposed_amount: Optional[Decimal] = None,
-):
+        evaluation_summary=eval_summary,
+        treasury_summary=treasury_summary,
+        controller_decision=controller_decision)

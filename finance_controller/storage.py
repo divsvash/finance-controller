@@ -25,6 +25,8 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 
+RUNS_DIR_DEFAULT = "runs"
+
 _REGISTRY: dict[str, type] = {
     f"{m.__name__}.{c.__name__}": c
     for m in (

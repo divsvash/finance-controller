@@ -106,6 +106,24 @@ class LiquidityPolicy:
                 raise MoneyError(f"{name} must be non-negative: {v}")
 
 @dataclass(frozen=True)
+class ExternalRecord:
+    id: str
+    timestamp: datetime
+    amount: Decimal              # non-negative; direction gives sign
+    direction: Direction
+    status: TxnStatus
+    external_reference: str      # processor-side reference, e.g. payment_ref
+    source: str                  # originating system/provider, e.g. "ledger"
+    payment_ref: str = ""
+
+    def __post_init__(self) -> None:
+        amt = money(self.amount)
+        object.__setattr__(self, "amount", amt)
+        if amt < 0:
+            raise MoneyError(f"ExternalRecord amount must be non-negative: {amt}")
+
+
+@dataclass(frozen=True)
 class Transaction:
     id: str
     timestamp: datetime

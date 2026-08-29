@@ -17,21 +17,21 @@ Environment variables (LLM mode only):
 No flags = deterministic-only; no API key needed, no LLM client is ever
 constructed. --llm never falls back to FakeLLMClient.
 """
-import json
-from datetime import date
-from decimal import Decimal, InvalidOperation
-from .treasury import (
-    CashPosition, Certainty, ControllerPolicy, ExpectedFlow,
-    FlowCategory, FlowDirection)
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter
+from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from .generator import generate_dataset, generate_external_dataset
 from .llm_client import FakeLLMClient  # noqa: F401  (injection point only)
 from .pipeline import run_pipeline
+from .treasury import (
+    CashPosition, Certainty, ControllerPolicy, ExpectedFlow,
+    FlowCategory, FlowDirection)
 
 PROG = "finance-controller"
 

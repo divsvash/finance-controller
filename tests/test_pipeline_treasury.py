@@ -27,7 +27,8 @@ def _flows():
     return [
         ExpectedFlow("f1", FlowDirection.INFLOW, Decimal("15000"),
                      date(2025, 7, 10), __import__("finance_controller.treasury",
-                     fromlist=["FlowCategory"]).FlowCategory.RECEIVABLE),
+                     fromlist=["FlowCategory"]).FlowCategory.RECEIVABLE,
+                     Certainty.CONFIRMED),
         ExpectedFlow("f2", FlowDirection.OUTFLOW, Decimal("8000"),
                      date(2025, 7, 15),
                      __import__("finance_controller.treasury",
