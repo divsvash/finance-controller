@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from .models import Direction, Obligation, ObligationStatus, Transaction, TxnStatus, money
+from .models import (
+    Direction, ExternalRecord, Obligation, ObligationStatus, Transaction,
+    TxnStatus, money)
 
 CATEGORIES_IN = ["sales", "subscriptions", "refunds_received"]
 CATEGORIES_OUT = [
