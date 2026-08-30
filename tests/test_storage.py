@@ -121,8 +121,8 @@ def test_corrupt_nested_fails(tmp_path, mutate):
     pr = doc["pipeline_result"]
     if "__type__" not in pr:  # unwrap the PipelineResult tag
         pr = next(v for v in pr.values() if isinstance(v, dict))
-    mutate({"schema_version": doc.get("schema_version", 1),
-            "pipeline_result": pr})
+        doc["pipeline_result"] = pr
+    mutate(doc)
     p.write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(StorageError):
         load_pipeline_result(p)

@@ -28,15 +28,17 @@ SCHEMA_VERSION = 1
 RUNS_DIR_DEFAULT = "runs"
 
 _REGISTRY: dict[str, type] = {
-    f"{m.__name__}.{c.__name__}": c
+    f"{m.__name__.rsplit('.', 1)[-1]}.{c.__name__}": c
     for m in (
-        __import__(n) for n in (
+        __import__(n, fromlist=["_"]) for n in (
             "finance_controller.models",
             "finance_controller.exceptions",
             "finance_controller.investigator",
             "finance_controller.reconciliation",
             "finance_controller.evaluation",
             "finance_controller.pipeline",
+            "finance_controller.treasury",
+            "finance_controller.controller",
         ))
     for c in vars(m).values()
     if isinstance(c, type) and is_dataclass(c)
@@ -44,8 +46,9 @@ _REGISTRY: dict[str, type] = {
 _ENUM_REGISTRY: dict[str, type] = {
     e.__name__: e
     for mod in ("finance_controller.models", "finance_controller.exceptions",
-                "finance_controller.investigator", "finance_controller.evaluation")
-    for e in vars(__import__(mod)).values()
+                "finance_controller.investigator", "finance_controller.evaluation",
+                "finance_controller.treasury", "finance_controller.controller")
+    for e in vars(__import__(mod, fromlist=["_"])).values()
     if isinstance(e, type) and issubclass(e, Enum)
 }
 
