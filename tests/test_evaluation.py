@@ -82,7 +82,7 @@ def test_missing_external_needs_uncertainty():
     c = next(x for x in mkcases()
              if x.exception_type == ExceptionType.MISSING_EXTERNAL)
     llm = base_llm(case_id=c.case_id, exception_type="MISSING_EXTERNAL",
-                   risk_level=RiskLevel(c.priority.value.lower()),
+                   risk_level=RiskLevel(c.priority.name.lower()),
                    finding="No counterpart exists anywhere.",
                    explanation="The money never arrived. Period.")
     r = evaluate_assessment(c, det_of(c), llm)
@@ -95,7 +95,7 @@ def test_ambiguous_needs_uncertainty():
     c = next(x for x in mkcases()
              if x.exception_type == ExceptionType.AMBIGUOUS_MATCH)
     llm = base_llm(case_id=c.case_id, exception_type="AMBIGUOUS_MATCH",
-                   risk_level=RiskLevel(c.priority.value.lower()),
+                   risk_level=RiskLevel(c.priority.name.lower()),
                    finding="Candidate A is definitely correct.",
                    explanation="Pick candidate ext_1.")
     r = evaluate_assessment(c, det_of(c), llm)
@@ -221,6 +221,6 @@ def test_golden_missing_external_uncertainty_enforced():
     c = next(x for x in mkcases()
              if x.exception_type == ExceptionType.MISSING_EXTERNAL)
     good = base_llm(case_id=c.case_id, exception_type="MISSING_EXTERNAL",
-                    risk_level=RiskLevel(c.priority.value.lower()),
+                    risk_level=RiskLevel(c.priority.name.lower()),
                     explanation=GOOD_EXPL_MISSING)
     assert evaluate_assessment(c, investigate_case(c), good).overall_pass

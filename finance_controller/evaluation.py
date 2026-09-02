@@ -168,7 +168,7 @@ def evaluate_assessment(
 
     id_ok = llm.case_id == case.case_id
     type_ok = llm.exception_type == case.exception_type.value
-    expected_risk = RiskLevel(case.priority.value.lower())
+    expected_risk = RiskLevel(case.priority.name.lower())
     risk_ok = llm.risk_level == expected_risk
     conf_ok = isinstance(llm.confidence, Confidence) or \
         getattr(llm.confidence, "value", llm.confidence) in \
